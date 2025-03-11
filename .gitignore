@@ -1,0 +1,67 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build artifacts
+*.log
+*.out
+*.test
+
+# Dependency directories (if using vendoring)
+/vendor/
+
+# Go modules
+/go.sum
+/go.mod
+
+# IDE/editor settings
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Private keys & credentials
+.env
+config.yaml
+config.json
+certs/
+keys/
+secrets/
+
+# Logs and debugging
+*.log
+*.trace
+*.prof
+
+# Coverage files
+*.cover
+*.cov
+
+# Temporary files
+/tmp/
+**/*~
+
+# If using MongoDB for authentication
+*.pem
+*.crt
+*.key
+*.json
+*.bson
+*.lock
+/mongodb/
+/mongod.lock
+/mongod.pid
+
+# If using JWT tokens stored locally
+tokens/
+
+# If using Docker
+docker-compose.override.yml
+.env.docker
