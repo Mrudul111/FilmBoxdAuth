@@ -2,6 +2,7 @@ package tokenHelper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github/Mrudul111/FilmBoxdAuth/database"
 	"log"
@@ -114,4 +115,11 @@ func UpdateAllTokens(signedToken string, signedRefreshToken string, userId strin
 	}
 
 	return
+}
+func ExtractUserID(signedToken string) (string, error) {
+	claims, msg := ValidateToken(signedToken)
+	if msg != "" {
+		return "", errors.New(msg)
+	}
+	return claims.Uid, nil
 }

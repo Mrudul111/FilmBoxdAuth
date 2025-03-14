@@ -42,7 +42,7 @@ func HashPassword(password string) string {
 
 func VerifyPassword(userPassword string, providerPassword string) (bool, string) {
 
-	err := bcrypt.CompareHashAndPassword([]byte(userPassword), []byte(providerPassword))
+	err := bcrypt.CompareHashAndPassword([]byte(providerPassword), []byte(userPassword))
 	check := true
 	msg := ""
 
@@ -100,6 +100,9 @@ func SignUp() gin.HandlerFunc {
 		token, refreshToken, _ := helper.GenerateAllTokens(*user.Email, *user.First_name, *user.Last_name, user.User_id)
 		user.Token = &token
 		user.Refresh_token = &refreshToken
+		user.Followers = 0
+		user.Following = 0
+		user.Movies = make([]model.Movie, 0)
 
 		resultInsertionNumber, insertErr := userCollection.InsertOne(ctx, user)
 		if insertErr != nil {
@@ -142,4 +145,103 @@ func Login() gin.HandlerFunc {
 
 		c.JSON(http.StatusOK, foundUser)
 	}
+}
+
+func AddMovieToList(c *gin.Context) {
+	userID := c.Param("user_id")
+
+	objID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID format"})
+		return
+	}
+
+	var movie model.Movie
+	if err := c.ShouldBindJSON(&movie); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"_id": objID}
+	update := bson.M{"$push": bson.M{"movies": movie}}
+
+	result, err := userCollection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add movie"})
+		return
+	}
+
+	if result.MatchedCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Movie added successfully"})
+}
+
+func GetMoviesInList(c *gin.Context) {
+	id := c.Param("user_id")
+
+	objID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user id"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var user struct {
+		Movies []bson.M `bson:movies`
+	}
+
+	err = userCollection.FindOne(ctx, bson.M{"_id": objID}).Decode(&user)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"movies": user.Movies})
+}
+
+func PostReviews(c *gin.Context) {
+	id := c.Param("user_id")
+
+	objID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var review model.Review
+	if err := c.ShouldBindJSON(&review); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	}
+	filter := bson.M{"_id": objID}
+	update1 := bson.M{"$push": bson.M{"user_reviews": review}}
+	result, err := userCollection.UpdateOne(ctx, filter, update1)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add review"})
+		return
+	}
+
+	if result.MatchedCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Review added successfully"})
+}
+
+func FetchReview(c *gin.Context){
+	id := c.Param("user_id")
+	objID,err :=
 }
