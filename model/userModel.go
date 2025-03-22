@@ -6,6 +6,12 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+type List struct {
+	List_id          string  `json:"list_id"`
+	List_name        string  `json:"list_name"`
+	Movies           []Movie `json:"movies"`
+	List_description string  `json:"description"`
+}
 type Movie struct {
 	Title      string  `json:"title" validate:"required"`
 	Genre      string  `json:"genre" validate:"required"`
@@ -35,6 +41,6 @@ type User struct {
 	User_id       string             `json:"user_id"`
 	Followers     int                `json:"followers"`
 	Following     int                `json:"following"`
-	Movies        []Movie            `json:"movies"`
+	List          []List             `json:"list"`
 	UserReview    []Review           `json:"user_reviews"`
 }

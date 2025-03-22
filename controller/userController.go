@@ -22,6 +22,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -102,7 +103,7 @@ func SignUp() gin.HandlerFunc {
 		user.Refresh_token = &refreshToken
 		user.Followers = 0
 		user.Following = 0
-		user.Movies = make([]model.Movie, 0)
+		user.List = make([]model.List, 0)
 
 		resultInsertionNumber, insertErr := userCollection.InsertOne(ctx, user)
 		if insertErr != nil {
@@ -146,19 +147,19 @@ func Login() gin.HandlerFunc {
 		c.JSON(http.StatusOK, foundUser)
 	}
 }
-
-func AddMovieToList(c *gin.Context) {
+func CreateList(c *gin.Context) {
 	userID := c.Param("user_id")
-
 	objID, err := primitive.ObjectIDFromHex(userID)
+	var list model.List
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
 		return
 	}
+	list.List_id = primitive.NewObjectID().Hex()
+	list.Movies = []model.Movie{}
 
-	var movie model.Movie
-	if err := c.ShouldBindJSON(&movie); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := c.ShouldBindJSON(&list); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Please give name for the List"})
 		return
 	}
 
@@ -166,11 +167,11 @@ func AddMovieToList(c *gin.Context) {
 	defer cancel()
 
 	filter := bson.M{"_id": objID}
-	update := bson.M{"$push": bson.M{"movies": movie}}
-
+	update := bson.M{"$push": bson.M{"list": list}}
 	result, err := userCollection.UpdateOne(ctx, filter, update)
+
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add movie"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create list"})
 		return
 	}
 
@@ -180,25 +181,132 @@ func AddMovieToList(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Movie added successfully"})
+
 }
+func AddListDescription(c *gin.Context) {
+	userID := c.Param("user_id")
+	listID := c.Param("list_id")
 
-func GetMoviesInList(c *gin.Context) {
-	id := c.Param("user_id")
-
-	objID, err := primitive.ObjectIDFromHex(id)
+	objUserID, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	var requestBody struct {
+		ListDescription string `json:"list_description" validate:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	var user struct {
-		Movies []bson.M `bson:movies`
+	filter := bson.M{"_id": objUserID, "list.list_id": listID}
+	update := bson.M{"$set": bson.M{"list.$.list_description": requestBody.ListDescription}}
+
+	result, err := userCollection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update list description"})
+		return
 	}
 
+	if result.MatchedCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User or List not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "List description updated successfully"})
+}
+
+func AddMovieToList(c *gin.Context) {
+	userID := c.Param("user_id")
+	listID := c.Param("list_id") // Keep list ID as a string
+
+	// Convert user ID to ObjectID
+	objID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID format"})
+		return
+	}
+
+	// Bind movie data from request
+	var movie model.Movie
+	if err := c.ShouldBindJSON(&movie); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Check if the user exists
+	var user model.User
 	err = userCollection.FindOne(ctx, bson.M{"_id": objID}).Decode(&user)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	// Check if the list exists within the user's lists
+	listFound := false
+	for _, list := range user.List {
+		if list.List_id == listID {
+			listFound = true
+			break
+		}
+	}
+
+	if !listFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "List not found for the user"})
+		return
+	}
+
+	// Update the list with the new movie
+	filter := bson.M{"_id": objID, "list.list_id": listID} // Match list by string ID
+	update := bson.M{"$push": bson.M{"list.$.movies": movie}}
+
+	result, err := userCollection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if result.MatchedCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "List not found for the user"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Movie added successfully"})
+}
+
+func GetMoviesInList(c *gin.Context) {
+	userID := c.Param("user_id")
+	listID := c.Param("list_id")
+
+	// Convert user_id to ObjectID
+	objID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID format"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Define structure to hold the retrieved list
+	var user struct {
+		Lists []struct {
+			ListID string        `bson:"list_id"`
+			Movies []model.Movie `bson:"movies"`
+		} `bson:"list"`
+	}
+
+	// Find the user and project only the relevant fields
+	err = userCollection.FindOne(ctx, bson.M{"_id": objID}, options.FindOne().SetProjection(bson.M{"list": 1})).Decode(&user)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
@@ -207,7 +315,17 @@ func GetMoviesInList(c *gin.Context) {
 		}
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"movies": user.Movies})
+
+	// Find the specific list with the given list_id
+	for _, list := range user.Lists {
+		if list.ListID == listID {
+			c.JSON(http.StatusOK, gin.H{"movies": list.Movies})
+			return
+		}
+	}
+
+	// If list was not found
+	c.JSON(http.StatusNotFound, gin.H{"error": "List not found for the user"})
 }
 
 func PostReviews(c *gin.Context) {
@@ -239,9 +357,4 @@ func PostReviews(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Review added successfully"})
-}
-
-func FetchReview(c *gin.Context){
-	id := c.Param("user_id")
-	objID,err :=
 }
